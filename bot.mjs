@@ -166,17 +166,23 @@ bot.on("scan", ({ url }) => {
 });
 
 bot.on("message", async (msg) => {
+  // 调试：打印消息类型
+  const types = msg.item?.item_list?.map(i => i.type) || [];
+  console.log(`📨 消息类型:${JSON.stringify(types)} text:"${(msg.text||"").slice(0,40)}"`);
+
   const text = msg.text || "";
   let images = [];
 
-  // 检测并下载图片
+  // 检测并下载图片/文件
   try {
     const buf = await msg.downloadMedia();
     if (buf && buf.length > 0) {
       images.push({ data: buf.toString("base64"), type: "image/jpeg" });
-      console.log(`📷 收到图片 (${(buf.length / 1024).toFixed(0)}KB)`);
+      console.log(`📷 下载成功 (${(buf.length/1024).toFixed(0)}KB)`);
     }
-  } catch {} // 无图片或下载失败
+  } catch (e) {
+    console.log(`📷 下载失败: ${e.message}`);
+  }
 
   if (!text && images.length === 0) return;
   console.log(`📩 ${(text || "[图片]").slice(0, 100)}`);
