@@ -22,7 +22,7 @@ async function askClaude(userId, text) {
   if (history.length > 40) history.splice(0, history.length - 40);
 
   const resp = await claude.messages.create({
-    model: "claude-haiku-4-5",   // 最快的模型，日常聊天秒回
+    model: "claude-sonnet-4-6",   // 智能和速度的平衡
     max_tokens: 1024,
     thinking: { type: "disabled" },
     system: "用中文回复，简洁自然像朋友聊天。不要用Markdown格式。控制在200字以内。",
