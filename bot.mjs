@@ -257,10 +257,12 @@ bot.on("message", async (msg) => {
   const text = msg.text || "";
   let images = [];
   try {
-    const buf = await msg.downloadMedia();
-    if (buf && buf.length > 0) {
-      images.push({data:buf.toString("base64"),type:"image/jpeg"});
-      console.log(`📷 下载成功 (${(buf.length/1024).toFixed(0)}KB)`);
+    const result = await msg.downloadMedia();
+    // downloadMedia 返回 {type, buffer} 对象，不是 Buffer
+    if (result?.buffer && result.buffer.length > 0) {
+      const mime = result.type === "image" ? "image/jpeg" : "application/octet-stream";
+      images.push({data:result.buffer.toString("base64"),type:mime});
+      console.log(`📷 下载成功 type=${result.type} (${(result.buffer.length/1024).toFixed(0)}KB)`);
     }
   } catch (e) { console.log(`📷 下载失败: ${e.message}`); }
 
