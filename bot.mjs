@@ -75,28 +75,40 @@ const conversations = new Map();
 const SYSTEM_PROMPT = [
   "你是一个专业的 AI 助手，通过微信为用户服务。",
   "",
-  "## 搜索能力（核心）",
-  "- 遇到任何需要最新信息的问题，必须先 web_search 搜索再回答，不要凭记忆猜测",
-  "- web_search 搜到相关链接后，用 web_fetch 抓取完整页面内容做深入分析",
-  "- 多轮搜索：如果第一次搜索结果不够，换关键词继续搜",
-  "- 用户问到房产、政策、价格、商家信息、新闻等，都必须搜索",
+  "## 视觉能力",
+  "- 用户可以给你发照片/截图，你能识别图中的文字、物体、场景",
+  "- 可以提取图片中的信息（账单、合同、表格等）并帮用户整理分析",
+  "- 收到图片时主动说明你看到了什么",
+  "",
+  "## 搜索能力",
+  "- 需要实时信息时用 web_search 搜索，搜到链接用 web_fetch 获取完整内容",
+  "- 房产、政策、价格、商家信息、新闻等都必须搜索后再回答",
   "",
   "## 记忆能力",
-  "- 用 memory 工具记住用户的重要信息：名字、偏好、在做的事、关键决策",
-  "- 每次对话前后检查并更新记忆",
-  "- 新对话开始时先查看记忆，结合历史记录做分析",
+  "- 用 memory 记住用户的重要信息：名字、偏好、在做的事、关键决策",
+  "- 每次对话前后检查记忆，新对话开始时先查看历史记忆",
   "",
   "## 回复要求",
   "- 中文回复，有深度有实质",
-  "- 微信不支持 Markdown，用纯文本",
+  "- 可以用纯文本列出要点的帮助用户整理信息",
   "- 信息不足时主动提问",
 ].join("\n");
 
-async function askClaude(userId, text) {
+async function askClaude(userId, text, images = []) {
   // 加载历史
   if (!conversations.has(userId)) conversations.set(userId, []);
   const messages = conversations.get(userId);
-  messages.push({ role: "user", content: text });
+
+  // 构建用户消息（文本 + 图片）
+  const content = [];
+  for (const img of images) {
+    content.push({
+      type: "image",
+      source: { type: "base64", media_type: img.type || "image/jpeg", data: img.data },
+    });
+  }
+  if (text) content.push({ type: "text", text });
+  messages.push({ role: "user", content: content.length === 1 && content[0].type === "text" ? text : content });
 
   // 工具循环
   let resp;
@@ -154,10 +166,22 @@ bot.on("scan", ({ url }) => {
 });
 
 bot.on("message", async (msg) => {
-  if (!msg.text) return;
-  console.log(`📩 ${msg.text.slice(0, 100)}`);
+  const text = msg.text || "";
+  let images = [];
+
+  // 检测并下载图片
   try {
-    const reply = await askClaude(msg.from, msg.text);
+    const buf = await msg.downloadMedia();
+    if (buf && buf.length > 0) {
+      images.push({ data: buf.toString("base64"), type: "image/jpeg" });
+      console.log(`📷 收到图片 (${(buf.length / 1024).toFixed(0)}KB)`);
+    }
+  } catch {} // 无图片或下载失败
+
+  if (!text && images.length === 0) return;
+  console.log(`📩 ${(text || "[图片]").slice(0, 100)}`);
+  try {
+    const reply = await askClaude(msg.from, text, images);
     await msg.sendText(reply);
     console.log(`✅ ${reply.slice(0, 80)}...`);
   } catch (e) {
