@@ -22,12 +22,10 @@ async function askClaude(userId, text) {
   if (history.length > 40) history.splice(0, history.length - 40);
 
   const resp = await claude.messages.create({
-    model: "claude-sonnet-4-6",
-    max_tokens: 4096,
+    model: "claude-haiku-4-5",   // 最快的模型，日常聊天秒回
+    max_tokens: 1024,
     thinking: { type: "disabled" },
     system: "用中文回复，简洁自然像朋友聊天。不要用Markdown格式。控制在200字以内。",
-    // 联网搜索：问实时信息时自动搜索
-    tools: [{ type: "web_search_20260209", name: "web_search" }],
     messages: history,
   });
   // 安全获取文本：跳过 thinking block，找第一个 text block
