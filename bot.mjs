@@ -4,6 +4,7 @@ import { WechatBot } from "wx-clawbot";
 import qr from "qrcode-terminal";
 import fs from "fs";
 import path from "path";
+import sharp from "sharp";
 
 const apiKey = process.env.ANTHROPIC_API_KEY;
 if (!apiKey) { console.error("请设置 ANTHROPIC_API_KEY"); process.exit(1); }
@@ -137,6 +138,21 @@ const SYSTEM_PROMPT = [
   "- 每次对话开始前查看记忆, 跨对话关联信息",
   "- 用户说过的偏好不要让他重复",
   "",
+  "# 🖼️ 图片编辑",
+  "当用户发来图片并要求编辑时，回复 JSON 编辑指令：",
+  "```json",
+  '{"action":"crop|resize|rotate|flip|grayscale|blur|sharpen|tint|text",',
+  '"comment":"先说明你要做什么编辑，然后给指令"}',
+  "```",
+  "- crop: {\"width\":400,\"height\":300,\"left\":0,\"top\":0}",
+  "- resize: {\"width\":800,\"height\":600} (等比缩放只填一个)",
+  "- rotate: {\"angle\":90} (不填则自动纠偏)",
+  "- flip: {} 或 {\"direction\":\"vertical\"}",
+  "- grayscale: {}  模糊: {\"blur\":5}  锐化: {\"sharpen\":true}",
+  "- tint: {\"color\":\"#ff0000\"}  调色",
+  "- text: {\"text\":\"水印文字\",\"x\":10,\"y\":10,\"size\":24,\"color\":\"#fff\"}",
+  "先文字说明再给 JSON，让用户知道你要做什么。",
+  "",
   REMINDER_GUIDE,
   "",
   "# ⚡ 行为准则",
@@ -146,6 +162,49 @@ const SYSTEM_PROMPT = [
   "- 微信不支持 Markdown, 用纯文本表达",
   "- 善用分段、缩进、符号让信息清晰可读",
 ].join("\n");
+
+// ─── 图片编辑引擎 ───
+const TMP_DIR = process.env.TMP_DIR || "/tmp/wechat-bot-images";
+fs.mkdirSync(TMP_DIR, { recursive: true });
+
+async function editImage(inputBuffer, editJson) {
+  let img = sharp(inputBuffer);
+  const { action } = editJson;
+  switch (action) {
+    case "crop":
+      img = img.extract({ left: editJson.left||0, top: editJson.top||0, width: editJson.width, height: editJson.height });
+      break;
+    case "resize":
+      img = img.resize({ width: editJson.width, height: editJson.height, fit: "inside", withoutEnlargement: true });
+      break;
+    case "rotate":
+      img = img.rotate(editJson.angle || undefined);
+      break;
+    case "flip":
+      img = editJson.direction === "vertical" ? img.flip() : img.flop();
+      break;
+    case "grayscale":
+      img = img.grayscale();
+      break;
+    case "blur":
+      img = img.blur(editJson.blur || 5);
+      break;
+    case "sharpen":
+      img = img.sharpen();
+      break;
+    case "tint":
+      img = img.tint(editJson.color || "#ff0000");
+      break;
+    case "text": {
+      const svgText = `<svg width="${editJson.width||800}" height="${editJson.height||600}">
+        <text x="${editJson.x||10}" y="${editJson.y||30}" font-size="${editJson.size||24}" fill="${editJson.color||'#fff'}">${editJson.text}</text></svg>`;
+      img = img.composite([{ input: Buffer.from(svgText), top: 0, left: 0 }]);
+      break;
+    }
+    default: return null;
+  }
+  return img.jpeg().toBuffer();
+}
 
 async function askClaude(userId, text, images=[]) {
   if (!conversations.has(userId)) conversations.set(userId, []);
@@ -270,7 +329,30 @@ bot.on("message", async (msg) => {
   console.log(`📩 ${(text||"[图片]").slice(0,100)}`);
   try {
     const reply = await askClaude(msg.from, text, images);
-    await msg.sendText(reply);
+
+    // 检测是否有图片编辑指令
+    const editMatch = reply.match(/\{[\s\S]*"action"\s*:\s*"(crop|resize|rotate|flip|grayscale|blur|sharpen|tint|text)"[\s\S]*\}/);
+    if (editMatch && images.length > 0) {
+      try {
+        const editJson = JSON.parse(editMatch[0]);
+        const editedBuffer = await editImage(Buffer.from(images[0].data, "base64"), editJson);
+        if (editedBuffer) {
+          // 保存到临时文件并发送
+          const tmpPath = path.join(TMP_DIR, `edited-${Date.now()}.jpg`);
+          fs.writeFileSync(tmpPath, editedBuffer);
+          await msg.sendImage(tmpPath);
+          console.log(`🖼️ 已发送编辑后图片`);
+          // 同时发送文字说明
+          const commentOnly = reply.replace(editMatch[0], "").trim();
+          if (commentOnly) await msg.sendText(commentOnly);
+        }
+      } catch (e) {
+        console.log(`🖼️ 编辑失败: ${e.message}，发送文字回复`);
+        await msg.sendText(reply);
+      }
+    } else {
+      await msg.sendText(reply);
+    }
     console.log(`✅ ${reply.slice(0,80)}...`);
   } catch (e) {
     console.error("❌", e.message);
