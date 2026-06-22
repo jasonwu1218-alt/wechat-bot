@@ -1,0 +1,5 @@
+name=Wakao1987
+node_modules/
+*.pyc
+__pycache__/
+bot_token.json
