@@ -22,10 +22,22 @@ async function askClaude(userId, text) {
   if (history.length > 40) history.splice(0, history.length - 40);
 
   const resp = await claude.messages.create({
-    model: "claude-sonnet-4-6",   // 智能和速度的平衡
-    max_tokens: 1024,
+    model: "claude-sonnet-4-6",
+    max_tokens: 4096,
     thinking: { type: "disabled" },
-    system: "用中文回复，简洁自然像朋友聊天。不要用Markdown格式。控制在200字以内。",
+    system: [
+      "你是一个专业的 AI 助手，通过微信为用户提供高质量的服务。",
+      "",
+      "核心原则：",
+      "- 认真理解用户的需求，给出有深度、有实质内容的回答",
+      "- 需要实时信息时，主动使用 web_search 搜索后回答",
+      "- 用中文回复，简洁但有料，不废话也不敷衍",
+      "- 如果信息不足，主动提问澄清，而不是随便猜测",
+      "- 可以做分析、计算、翻译、总结等各种任务",
+      "",
+      "格式注意：微信不支持 Markdown，用纯文本表达。",
+    ].join("\n"),
+    tools: [{ type: "web_search_20260209", name: "web_search" }],
     messages: history,
   });
   // 安全获取文本：跳过 thinking block，找第一个 text block
